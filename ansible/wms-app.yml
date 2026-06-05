@@ -1,0 +1,103 @@
+---
+- name: Deploy WMS app instance
+  hosts: production
+  become: true
+  vars_files:
+    - vars/wms-app.yml
+
+  tasks:
+
+    # ── Databases ─────────────────────────────────────────────────────────────
+    - name: Create app databases
+      ansible.builtin.shell: |
+        mysql <<SQLEOF
+        CREATE DATABASE IF NOT EXISTS \`{{ db_name }}\`;
+        CREATE DATABASE IF NOT EXISTS \`{{ db_name2 }}\`;
+        SQLEOF
+
+    # ── Clone repo ────────────────────────────────────────────────────────────
+    - name: Ensure /var/www/html exists
+      ansible.builtin.file:
+        path: /var/www/html
+        state: directory
+        mode: '0755'
+
+    - name: Clone repo
+      ansible.builtin.git:
+        repo: "https://{{ github_token }}@github.com/{{ github_user }}/{{ github_repo }}.git"
+        dest: "{{ app_root }}"
+        version: main
+        force: yes
+      no_log: true
+
+    # ── Config files ──────────────────────────────────────────────────────────
+    - name: Deploy app/config.php
+      ansible.builtin.template:
+        src: templates/config.php.j2
+        dest: "{{ app_root }}/app/config.php"
+        mode: '0640'
+
+    - name: Deploy nodejs/.env
+      ansible.builtin.template:
+        src: templates/nodejs.env.j2
+        dest: "{{ app_root }}/nodejs/.env"
+        mode: '0640'
+
+    - name: Install Node.js dependencies
+      community.general.npm:
+        path: "{{ app_root }}/nodejs"
+        state: present
+
+    - name: Set app ownership to www-data
+      ansible.builtin.file:
+        path: "{{ app_root }}"
+        owner: www-data
+        group: www-data
+        recurse: yes
+
+    # ── Database schema ───────────────────────────────────────────────────────
+    - name: Run database setup script
+      ansible.builtin.command: php setup.php
+      args:
+        chdir: "{{ app_root }}"
+      register: setup_result
+
+    - name: Show setup output
+      ansible.builtin.debug:
+        var: setup_result.stdout_lines
+
+    # ── Nginx site ────────────────────────────────────────────────────────────
+    - name: Remove base Nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/base
+        state: absent
+
+    - name: Deploy app Nginx config
+      ansible.builtin.template:
+        src: templates/nginx-wms.conf.j2
+        dest: "/etc/nginx/sites-available/{{ app_name }}"
+        mode: '0644'
+
+    - name: Enable app Nginx site
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ app_name }}"
+        dest: "/etc/nginx/sites-enabled/{{ app_name }}"
+        state: link
+
+    - name: Test and reload Nginx
+      ansible.builtin.shell: nginx -t && systemctl reload nginx
+
+    # ── Firewall ──────────────────────────────────────────────────────────────
+    - name: Allow Node.js port
+      ansible.builtin.ufw:
+        rule: allow
+        port: "{{ node_port | string }}"
+
+    # ── PM2 ───────────────────────────────────────────────────────────────────
+    - name: Start PM2 apps
+      ansible.builtin.shell: |
+        cd {{ app_root }}/nodejs
+        pm2 describe wms-socket > /dev/null 2>&1 && pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
+
+    - name: Save PM2 process list
+      ansible.builtin.command: pm2 save

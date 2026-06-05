@@ -1,0 +1,4 @@
+[production]
+# First run (fresh droplet): ansible_user=root  ansible_port=22
+# After server.yml runs:     ansible_user=YOUR_DEPLOY_USER  ansible_port=YOUR_SSH_PORT
+YOUR_DROPLET_IP ansible_user=YOUR_DEPLOY_USER ansible_port=YOUR_SSH_PORT

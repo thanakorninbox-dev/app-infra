@@ -1,5 +1,4 @@
-**/.terraform/
-**/*.tfstate
-**/*.tfstate.backup
-**/*.tfvars
-**/crash.log
+# Ansible
+ansible/vars/server.yml
+ansible/vars/wms-app.yml
+ansible/inventory.ini

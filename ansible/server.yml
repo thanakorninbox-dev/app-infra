@@ -1,0 +1,254 @@
+---
+- name: Configure WMS production server
+  hosts: production
+  become: true
+  vars_files:
+    - vars/server.yml
+
+  tasks:
+
+    # ── System ────────────────────────────────────────────────────────────────
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - nginx
+          - mariadb-server
+          - git
+          - curl
+          - unzip
+          - ufw
+          - fail2ban
+          - unattended-upgrades
+        state: present
+
+    # ── PHP 8.3 ───────────────────────────────────────────────────────────────
+    - name: Install PHP 8.3 and extensions
+      ansible.builtin.apt:
+        name:
+          - php8.3
+          - php8.3-fpm
+          - php8.3-mysql
+          - php8.3-mbstring
+          - php8.3-xml
+          - php8.3-curl
+          - php8.3-zip
+          - php8.3-intl
+          - php8.3-bcmath
+          - php8.3-gd
+        state: present
+
+    - name: Enable and start php8.3-fpm
+      ansible.builtin.systemd:
+        name: php8.3-fpm
+        enabled: yes
+        state: started
+
+    # ── Node.js 22 ────────────────────────────────────────────────────────────
+    - name: Add NodeSource Node.js 22 repo
+      ansible.builtin.shell: curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      args:
+        creates: /etc/apt/sources.list.d/nodesource.list
+
+    - name: Install Node.js
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+        update_cache: yes
+
+    - name: Install PM2 globally
+      community.general.npm:
+        name: pm2
+        global: yes
+        state: present
+
+    # ── MariaDB ───────────────────────────────────────────────────────────────
+    - name: Enable and start MariaDB
+      ansible.builtin.systemd:
+        name: mariadb
+        enabled: yes
+        state: started
+
+    - name: Set MariaDB root password
+      ansible.builtin.shell: |
+        mysql -u root <<SQLEOF
+        ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ db_root_pass }}';
+        FLUSH PRIVILEGES;
+        SQLEOF
+      args:
+        creates: /root/.my.cnf
+      no_log: true
+
+    - name: Write /root/.my.cnf
+      ansible.builtin.copy:
+        content: |
+          [client]
+          user=root
+          password={{ db_root_pass }}
+        dest: /root/.my.cnf
+        mode: '0600'
+      no_log: true
+
+    # ── Deploy user ───────────────────────────────────────────────────────────
+    - name: Create deploy user
+      ansible.builtin.user:
+        name: "{{ deploy_user }}"
+        groups: sudo
+        shell: /bin/bash
+        create_home: yes
+        state: present
+
+    - name: Allow passwordless sudo
+      ansible.builtin.copy:
+        content: "{{ deploy_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        dest: "/etc/sudoers.d/{{ deploy_user }}"
+        mode: '0440'
+
+    - name: Create .ssh directory
+      ansible.builtin.file:
+        path: "/home/{{ deploy_user }}/.ssh"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: '0700'
+
+    - name: Copy root authorized_keys to deploy user
+      ansible.builtin.copy:
+        src: /root/.ssh/authorized_keys
+        dest: "/home/{{ deploy_user }}/.ssh/authorized_keys"
+        remote_src: yes
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: '0600'
+
+    - name: Set root password
+      ansible.builtin.user:
+        name: root
+        password: "{{ root_pass | password_hash('sha512') }}"
+      no_log: true
+
+    # ── Nginx base config ─────────────────────────────────────────────────────
+    - name: Remove default Nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Deploy base Nginx config
+      ansible.builtin.template:
+        src: templates/nginx-base.conf.j2
+        dest: /etc/nginx/sites-available/base
+        mode: '0644'
+
+    - name: Enable base Nginx site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/base
+        dest: /etc/nginx/sites-enabled/base
+        state: link
+
+    - name: Create test index.php
+      ansible.builtin.copy:
+        content: "<?php phpinfo();"
+        dest: /var/www/html/index.php
+        mode: '0644'
+
+    - name: Reload Nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+
+    # ── PM2 startup service ───────────────────────────────────────────────────
+    - name: Configure PM2 systemd startup
+      ansible.builtin.shell: env PATH=$PATH:/usr/bin pm2 startup systemd -u root --hp /root
+      args:
+        creates: /etc/systemd/system/pm2-root.service
+
+    - name: Enable PM2 service
+      ansible.builtin.systemd:
+        name: pm2-root
+        enabled: yes
+        daemon_reload: yes
+      ignore_errors: yes
+
+    # ── Unattended upgrades ───────────────────────────────────────────────────
+    - name: Configure unattended upgrades
+      ansible.builtin.copy:
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        mode: '0644'
+
+    - name: Enable unattended-upgrades
+      ansible.builtin.systemd:
+        name: unattended-upgrades
+        enabled: yes
+        state: started
+
+    # ── Fail2ban ──────────────────────────────────────────────────────────────
+    - name: Configure fail2ban for SSH
+      ansible.builtin.copy:
+        content: |
+          [sshd]
+          enabled  = true
+          port     = {{ ssh_port }}
+          maxretry = 5
+          bantime  = 1h
+          findtime = 10m
+        dest: /etc/fail2ban/jail.d/sshd.conf
+        mode: '0644'
+
+    - name: Enable and restart fail2ban
+      ansible.builtin.systemd:
+        name: fail2ban
+        enabled: yes
+        state: restarted
+
+    # ── Firewall ──────────────────────────────────────────────────────────────
+    - name: Allow SSH port
+      ansible.builtin.ufw:
+        rule: allow
+        port: "{{ ssh_port | string }}"
+
+    - name: Allow HTTP
+      ansible.builtin.ufw:
+        rule: allow
+        port: '80'
+
+    - name: Allow HTTPS
+      ansible.builtin.ufw:
+        rule: allow
+        port: '443'
+
+    - name: Enable UFW
+      ansible.builtin.ufw:
+        state: enabled
+
+    # ── SSH hardening (must be last — restarts sshd) ──────────────────────────
+    - name: Set SSH port
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?Port\s'
+        line: "Port {{ ssh_port }}"
+
+    - name: Disable root SSH login
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+
+    - name: Disable password authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Schedule SSH restart detached from session
+      ansible.builtin.command: systemd-run --on-active=3 systemctl restart ssh

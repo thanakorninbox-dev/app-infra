@@ -1,0 +1,4 @@
+root_pass:    "CHANGE_ME_ROOT_PASSWORD"
+db_root_pass: "CHANGE_ME_DB_PASSWORD"
+deploy_user:  "YOUR_DEPLOY_USER"
+ssh_port:     YOUR_SSH_PORT
