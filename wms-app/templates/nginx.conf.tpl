@@ -1,12 +1,12 @@
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
+    listen 80;
+    listen [::]:80;
 
     root /var/www/html;
     index index.php index.html;
     server_name _;
 
-    location ~ ^/(wms-app)/ {
+    location ~ ^/(${app_path})/ {
         try_files $uri $uri/ /$1/index.php?$args;
         location ~ \.php$ {
             include snippets/fastcgi-php.conf;

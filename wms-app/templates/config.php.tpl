@@ -2,16 +2,16 @@
 
 if(true){
     $isTest      = "production";
-    $base_url    = "{{ app_base_url }}";
+    $base_url    = "${app_base_url}";
     $server_url  = $base_url."app/";
     $include_url = $_SERVER['DOCUMENT_ROOT'].$server_url;
 
-    $db_server   = "localhost";
-    $db_user     = "root";
-    $db_pass     = "{{ db_root_pass }}";
-    $db_type     = "mysql";
-    $db_database  = "{{ db_name }}";
-    $db_database2 = "{{ db_name2 }}";
+    $db_server    = "localhost";
+    $db_user      = "root";
+    $db_pass      = "${db_root_pass}";
+    $db_type      = "mysql";
+    $db_database  = "${db_name}";
+    $db_database2 = "${db_name2}";
 
     $db_server2 = $db_server;
     $db_user2   = $db_user;
@@ -55,9 +55,9 @@ $packages = [
 
 $pinkey = "wms";
 
-define('NODE_EMIT_SECRET', '{{ node_emit_secret }}');
-define('NODE_EMIT_URL',    'http://127.0.0.1:{{ node_port }}/emit');
-define('NODE_PUBLIC_URL',  'http://{{ inventory_hostname }}:{{ node_port }}');
+define('NODE_EMIT_SECRET', '${node_emit_secret}');
+define('NODE_EMIT_URL',    'http://127.0.0.1:${node_port}/emit');
+define('NODE_PUBLIC_URL',  'http://${server_ip}:${node_port}');
 
 $SMTP = [];
 $SMTP['server']   = "smtp.gmail.com";

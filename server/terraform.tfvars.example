@@ -1,0 +1,6 @@
+server_ip    = "YOUR_DROPLET_IP"
+ssh_key_path = "~/.ssh/id_ed25519"   # or ~/.ssh/id_rsa
+root_pass    = "CHANGE_ME_ROOT_PASSWORD"
+db_root_pass = "CHANGE_ME_DB_PASSWORD"
+deploy_user  = "CHANGE_ME_USERNAME"
+ssh_port     = 0000
