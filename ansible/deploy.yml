@@ -1,0 +1,45 @@
+---
+- name: Deploy app update
+  hosts: production
+  become: true
+
+  tasks:
+
+    # ── Pull latest code ──────────────────────────────────────────────────────
+    - name: Git pull
+      ansible.builtin.git:
+        repo: "https://{{ github_token }}@github.com/{{ github_user }}/{{ github_repo }}.git"
+        dest: "{{ app_root }}"
+        version: main
+        force: yes
+      no_log: true
+
+    # ── Dependencies ──────────────────────────────────────────────────────────
+    - name: npm install
+      community.general.npm:
+        path: "{{ app_root }}/nodejs"
+        state: present
+
+    # ── Ownership ─────────────────────────────────────────────────────────────
+    - name: Set ownership to www-data
+      ansible.builtin.file:
+        path: "{{ app_root }}"
+        owner: www-data
+        group: www-data
+        recurse: yes
+
+    # ── Restart services ──────────────────────────────────────────────────────
+    - name: Restart PM2 apps
+      ansible.builtin.shell: pm2 restart ecosystem.config.js
+      args:
+        chdir: "{{ app_root }}/nodejs"
+
+    - name: Reload Nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+
+    - name: Reload PHP-FPM
+      ansible.builtin.systemd:
+        name: php8.3-fpm
+        state: reloaded
