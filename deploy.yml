@@ -84,7 +84,21 @@
         NODE_ENV: production
       become: true
 
-    # ── 5. Start or reload processes (run as nok, not root) ──────────────────
+    # ── 5. Deploy nginx vhost + reload ───────────────────────────────────────
+    - name: Deploy nginx vhost
+      template:
+        src:  templates/nginx.conf.j2
+        dest: "/etc/nginx/sites-available/{{ client_name }}.conf"
+        mode: "0644"
+      become: true
+
+    - name: Reload nginx
+      service:
+        name:  nginx
+        state: reloaded
+      become: true
+
+    # ── 6. Start or reload processes (run as nok, not root) ──────────────────
     - name: Make start script executable
       file:
         path: "/var/www/html/{{ client_name }}/start.sh"
