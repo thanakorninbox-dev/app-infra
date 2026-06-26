@@ -1,0 +1,104 @@
+---
+# Routine deploy — pull latest code, rebuild, reload.
+# Usage: ansible-playbook deploy.yml -e client=abc
+
+- name: WMS — deploy client
+  hosts: production
+  gather_facts: false
+
+  vars_files:
+    - "clients/{{ client }}.yml"
+
+  tasks:
+
+    # ── 0. Fix git safe directory (repo cloned as root) ───────────────────────
+    - name: Mark repo as git safe directory
+      command: git config --global --add safe.directory /var/www/html/{{ client_name }}
+      become: true
+
+    # ── 1. Pull latest code ───────────────────────────────────────────────────
+    - name: Git pull
+      git:
+        repo:    "{{ git_repo }}"
+        dest:    "/var/www/html/{{ client_name }}"
+        version: "{{ git_branch }}"
+        force:   true
+      become: true
+      register: git_result
+
+    - name: Show git changes
+      debug:
+        msg: "Git: {{ git_result.before[:7] }} → {{ git_result.after[:7] }}"
+      when: git_result.before != git_result.after
+
+    # ── 2. Refresh .env.local (picks up any new vars) ────────────────────────
+    - name: Update .env.local
+      template:
+        src:   templates/env.local.j2
+        dest:  "/var/www/html/{{ client_name }}/.env.local"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode:  "0644"
+      become: true
+
+    # ── 3. Install dependencies (only if package-lock changed) ───────────────
+    - name: npm install
+      command: npm ci --prefer-offline
+      args:
+        chdir: "/var/www/html/{{ client_name }}"
+      become: true
+      when: git_result.before != git_result.after
+
+    - name: npm install (nodejs scheduler)
+      command: npm install --prefer-offline
+      args:
+        chdir: "/var/www/html/{{ client_name }}/nodejs"
+      become: true
+
+    - name: Fix nodejs ownership
+      file:
+        path:    "/var/www/html/{{ client_name }}/nodejs"
+        owner:   "{{ ansible_user }}"
+        group:   "{{ ansible_user }}"
+        recurse: true
+      become: true
+
+    # ── 4. Build ──────────────────────────────────────────────────────────────
+    - name: npm build
+      shell: |
+        set -a
+        source /var/www/html/{{ client_name }}/.env.local
+        set +a
+        npm run build
+      args:
+        chdir: "/var/www/html/{{ client_name }}"
+      environment:
+        NODE_ENV: production
+      become: true
+
+    # ── 5. Start or reload processes (run as nok, not root) ──────────────────
+    - name: Make start script executable
+      file:
+        path: "/var/www/html/{{ client_name }}/start.sh"
+        mode: "0755"
+      become: true
+
+    - name: PM2 start or reload Next.js
+      shell: |
+        pm2 describe {{ client_name }} > /dev/null 2>&1 \
+          && pm2 reload {{ client_name }} \
+          || pm2 start /var/www/html/{{ client_name }}/start.sh --name "{{ client_name }}" --cwd "/var/www/html/{{ client_name }}"
+
+    - name: PM2 start or reload scheduler
+      shell: |
+        pm2 describe sched-{{ client_name }} > /dev/null 2>&1 \
+          && pm2 reload sched-{{ client_name }} \
+          || pm2 start nodejs/scheduler.js --name "sched-{{ client_name }}" --cwd "/var/www/html/{{ client_name }}"
+
+    - name: Save PM2 process list
+      command: pm2 save
+
+    # ── Done ──────────────────────────────────────────────────────────────────
+    - name: Done
+      debug:
+        msg: "✅ {{ client_name }} deployed — http://{{ client_domain }}/wms-app/"
