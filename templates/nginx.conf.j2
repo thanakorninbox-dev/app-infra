@@ -15,6 +15,14 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
+    # Serve uploaded files directly (Next.js doesn't follow symlinks in public/)
+    location /wms-app/uploads/ {
+        alias /var/www/html/{{ client_name }}/php/uploads/;
+        expires 30d;
+        add_header Cache-Control "public";
+        client_max_body_size 2M;
+    }
+
     location /wms-app/ {
         proxy_pass         http://127.0.0.1:{{ app_port }};
         proxy_http_version 1.1;
