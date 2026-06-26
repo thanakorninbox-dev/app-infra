@@ -63,6 +63,14 @@
         recurse: true
       become: true
 
+    - name: Fix php/uploads ownership
+      file:
+        path:    "/var/www/html/{{ client_name }}/php/uploads"
+        owner:   "{{ ansible_user }}"
+        group:   "{{ ansible_user }}"
+        recurse: true
+      become: true
+
     # ── 4. Build ──────────────────────────────────────────────────────────────
     - name: npm build
       shell: |
