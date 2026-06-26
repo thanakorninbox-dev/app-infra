@@ -63,20 +63,7 @@
         recurse: true
       become: true
 
-    # ── 4. Ensure upload directories exist (public/uploads → php/uploads symlink) ─
-    - name: Create php/uploads directories
-      file:
-        path:  "/var/www/html/{{ client_name }}/php/uploads/{{ item }}"
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode:  "0755"
-      become: true
-      loop:
-        - profile
-        - company
-
-    # ── 5. Build ──────────────────────────────────────────────────────────────
+    # ── 4. Build ──────────────────────────────────────────────────────────────
     - name: npm build
       shell: |
         set -a
