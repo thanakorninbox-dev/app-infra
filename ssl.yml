@@ -1,0 +1,50 @@
+---
+# One-time SSL setup — generates self-signed cert and enables HTTPS in nginx.
+# Run once per server: ansible-playbook ssl.yml -e client=abc
+
+- name: WMS — setup HTTPS (self-signed cert)
+  hosts: production
+  gather_facts: false
+
+  vars_files:
+    - "clients/{{ client }}.yml"
+
+  tasks:
+
+    # ── 1. Generate self-signed cert (10-year, IP SAN) ───────────────────────
+    - name: Generate self-signed TLS cert
+      command: >
+        openssl req -x509 -nodes -days 3650 -newkey rsa:2048
+        -keyout /etc/ssl/private/{{ client_name }}.key
+        -out    /etc/ssl/certs/{{ client_name }}.crt
+        -subj   "/C=TH/O=WMS/CN={{ client_domain }}"
+        -addext "subjectAltName=IP:{{ client_domain }}"
+      args:
+        creates: /etc/ssl/certs/{{ client_name }}.crt
+      become: true
+
+    # ── 2. Deploy nginx vhost (HTTPS + HTTP redirect) ────────────────────────
+    - name: Deploy nginx vhost
+      template:
+        src:  templates/nginx.conf.j2
+        dest: "/etc/nginx/sites-available/{{ client_name }}.conf"
+        mode: "0644"
+      become: true
+
+    - name: Enable nginx vhost
+      file:
+        src:   "/etc/nginx/sites-available/{{ client_name }}.conf"
+        dest:  "/etc/nginx/sites-enabled/{{ client_name }}.conf"
+        state: link
+      become: true
+
+    - name: Reload nginx
+      service:
+        name:  nginx
+        state: reloaded
+      become: true
+
+    # ── Done ──────────────────────────────────────────────────────────────────
+    - name: Done
+      debug:
+        msg: "✅ HTTPS enabled — https://{{ client_domain }}/wms-app/ (accept the self-signed cert warning in browser)"

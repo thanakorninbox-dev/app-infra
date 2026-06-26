@@ -1,0 +1,27 @@
+# Copy this file for each new client:  cp example.yml abc.yml
+# Then fill in all values before running setup.yml
+
+# ── Identity ──────────────────────────────────────────────────────────────────
+client_name:    example              # used as folder name: /var/www/html/wms-example
+client_domain:  example.yourdomain.com
+app_port:       3001                 # unique port per client (3001, 3002, 3003 …)
+scheduler_port: 4001                 # unique port for socket server (4001, 4002 …)
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+git_repo:   git@github.com:you/wms-client-example.git
+git_branch: main
+
+# ── Databases ─────────────────────────────────────────────────────────────────
+db_host:     127.0.0.1
+db_port:     3306
+db_name:     wms_example            # auth DB  (company_list, user …)
+db2_name:    wms2_example           # data DB  (td_gl, td_stock_* …)
+db_user:     wms_example
+db_password: CHANGE_ME              # use ansible-vault for production
+
+# ── App secrets ───────────────────────────────────────────────────────────────
+emit_secret:      CHANGE_ME_32CHARS  # shared by Next.js + scheduler
+session_password: CHANGE_ME_32CHARS  # iron-session cookie password
+
+# ── App URL (used in verification / reset emails) ─────────────────────────────
+next_public_app_url: "https://example.yourdomain.com/wms-app"

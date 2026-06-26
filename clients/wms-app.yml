@@ -1,0 +1,33 @@
+# ── Identity ──────────────────────────────────────────────────────────────────
+client_name:    wms-app
+client_domain:  129.212.230.78
+app_port:       3000
+scheduler_port: 4000
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+git_repo:   git@github.com:thanakorninbox-dev/wms-app.git
+git_branch: main
+
+# ── Databases ─────────────────────────────────────────────────────────────────
+db_host:     127.0.0.1
+db_port:     3306
+db_name:     wms
+db2_name:    wms2
+db_user:     root
+db_password: "4265"
+
+# ── System SMTP ───────────────────────────────────────────────────────────────
+smtp_host:       smtp.gmail.com
+smtp_port:       "587"
+smtp_user:       thanakorn.inbox@gmail.com
+smtp_pass:       "duuo vnad rdax hgpt"
+smtp_from_name:  WMS
+smtp_from_email: thanakorn.inbox@gmail.com
+smtp_encryption: tls
+
+# ── App secrets ───────────────────────────────────────────────────────────────
+emit_secret:      ff4bc3c3a45fa6625f4f06bb2828152d7a1ec9566726b335c1bcd37edfed7822
+session_password: ff4bc3c3a45fa6625f4f06bb2828152d7a1ec9566726b335c1bcd37edfed7822
+
+# ── App URL ───────────────────────────────────────────────────────────────────
+next_public_app_url: "https://129.212.230.78/wms-app"

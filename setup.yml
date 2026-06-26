@@ -1,0 +1,126 @@
+---
+# First-time setup for a new client.
+# Usage: ansible-playbook setup.yml -e client=abc
+#
+# Prerequisites:
+#   - clients/{{ client }}.yml exists and is filled in
+#   - MySQL root credentials available (prompted below)
+#   - Git SSH key on this server has access to git_repo
+#   - nginx and pm2 are installed
+
+- name: WMS — new client setup
+  hosts: production
+  gather_facts: false
+
+  vars_files:
+    - "clients/{{ client }}.yml"
+
+  tasks:
+
+    # ── 1. Clone repo ──────────────────────────────────────────────────────────
+    - name: Clone client repo
+      git:
+        repo:    "{{ git_repo }}"
+        dest:    "/var/www/html/{{ client_name }}"
+        version: "{{ git_branch }}"
+        accept_hostkey: true
+        force:   true
+      become: true
+      register: git_clone
+
+    # ── 2. Write .env.local ───────────────────────────────────────────────────
+    - name: Write .env.local
+      template:
+        src:   templates/env.local.j2
+        dest:  "/var/www/html/{{ client_name }}/.env.local"
+        mode:  "0640"
+      become: true
+
+    # ── 3. Create MySQL databases and user ────────────────────────────────────
+    - name: Create databases and user
+      shell: |
+        mysql -u root -p{{ db_password }} -e "CREATE DATABASE IF NOT EXISTS \`{{ db_name }}\`;"
+        mysql -u root -p{{ db_password }} -e "CREATE DATABASE IF NOT EXISTS \`{{ db2_name }}\`;"
+        mysql -u root -p{{ db_password }} -e "CREATE USER IF NOT EXISTS '{{ db_user }}'@'{{ db_host }}' IDENTIFIED BY '{{ db_password }}';"
+        mysql -u root -p{{ db_password }} -e "GRANT ALL PRIVILEGES ON \`{{ db_name }}\`.* TO '{{ db_user }}'@'{{ db_host }}';"
+        mysql -u root -p{{ db_password }} -e "GRANT ALL PRIVILEGES ON \`{{ db2_name }}\`.* TO '{{ db_user }}'@'{{ db_host }}';"
+        mysql -u root -p{{ db_password }} -e "FLUSH PRIVILEGES;"
+      become: true
+
+    # ── 4. Import schemas ─────────────────────────────────────────────────────
+    - name: Import wms schema
+      shell: mysql -u root -p{{ db_password }} {{ db_name }} < /var/www/html/{{ client_name }}/docs/schema/schema_wms.sql
+      become: true
+
+    - name: Import wms2 schema
+      shell: mysql -u root -p{{ db_password }} {{ db2_name }} < /var/www/html/{{ client_name }}/docs/schema/schema_wms2.sql
+      become: true
+
+    # ── 5. npm install + build ────────────────────────────────────────────────
+    - name: npm install
+      command: npm ci --prefer-offline
+      args:
+        chdir: "/var/www/html/{{ client_name }}"
+      become: true
+
+    - name: npm build
+      command: npm run build
+      args:
+        chdir: "/var/www/html/{{ client_name }}"
+      environment:
+        NODE_ENV: production
+      become: true
+
+    # ── 6. PM2 — start Next.js ────────────────────────────────────────────────
+    - name: Start Next.js via PM2
+      command: >
+        pm2 start npm
+        --name "{{ client_name }}"
+        --cwd "/var/www/html/{{ client_name }}"
+        -- start
+      environment:
+        PORT: "{{ app_port }}"
+      become: true
+
+    # ── 7. PM2 — start scheduler ──────────────────────────────────────────────
+    - name: Start scheduler via PM2
+      command: >
+        pm2 start nodejs/scheduler.js
+        --name "sched-{{ client_name }}"
+        --cwd "/var/www/html/{{ client_name }}"
+      become: true
+
+    - name: Save PM2 process list
+      command: pm2 save
+      become: true
+
+    # ── 8. nginx vhost ────────────────────────────────────────────────────────
+    - name: Write nginx vhost
+      template:
+        src:  templates/nginx.conf.j2
+        dest: "/etc/nginx/sites-available/{{ client_name }}.conf"
+        mode: "0644"
+      become: true
+
+    - name: Enable nginx vhost
+      file:
+        src:   "/etc/nginx/sites-available/{{ client_name }}.conf"
+        dest:  "/etc/nginx/sites-enabled/{{ client_name }}.conf"
+        state: link
+      become: true
+
+    - name: Reload nginx
+      service:
+        name:  nginx
+        state: reloaded
+      become: true
+
+    # ── Done ──────────────────────────────────────────────────────────────────
+    - name: Done
+      debug:
+        msg: |
+          ✅ Client {{ client_name }} is live.
+             URL:       http://{{ client_domain }}/wms-app/
+             Port:      {{ app_port }}
+             Scheduler: {{ scheduler_port }}
+             Next step: certbot --nginx -d {{ client_domain }}
